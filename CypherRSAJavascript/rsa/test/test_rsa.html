@@ -1,0 +1,156 @@
+<HTML>
+<HEAD>
+<SCRIPT src="../pidcrypt.js"></SCRIPT>
+<SCRIPT src="../pidcrypt_util.js"></SCRIPT>
+<SCRIPT src="../asn1.js"></SCRIPT>
+<SCRIPT src="../jsbn.js"></SCRIPT>
+<SCRIPT src="../rng.js"></SCRIPT>
+<SCRIPT src="../prng4.js"></SCRIPT>
+<SCRIPT src="../rsa.js"></SCRIPT>
+<SCRIPT>
+
+  /*-----------------------------------------------------------* 
+   * ENCRYPT: RSA 1024 bit                                     * 
+   *-----------------------------------------------------------*/  
+  function certParser(cert){
+    var lines = cert.split('\n');
+    var read = false;
+    var b64 = false;
+    var end = false;
+    var flag = '';
+    var retObj = {};
+    retObj.info = '';
+    retObj.salt = '';
+    retObj.iv;
+    retObj.b64 = '';
+    retObj.aes = false;
+    retObj.mode = '';
+    retObj.bits = 0;
+    for(var i=0; i< lines.length; i++){
+      flag = lines[i].substr(0,9);
+      if(i==1 && flag != 'Proc-Type' && flag.indexOf('M') == 0)//unencrypted cert?
+        b64 = true;
+      switch(flag){
+        case '-----BEGI':
+          read = true;
+          break;
+        case 'Proc-Type':
+          if(read)
+            retObj.info = lines[i];
+          break;
+        case 'DEK-Info:':
+          if(read){
+            var tmp = lines[i].split(',');
+            var dek = tmp[0].split(': ');
+            var aes = dek[1].split('-');
+            retObj.aes = (aes[0] == 'AES')?true:false;
+            retObj.mode = aes[2];
+            retObj.bits = parseInt(aes[1]);
+            retObj.salt = tmp[1].substr(0,16);
+            retObj.iv = tmp[1];
+          }
+          break;
+        case '':
+          if(read)
+            b64 = true;
+          break;
+        case '-----END ':
+          if(read){
+            b64 = false;
+            read = false;
+          }
+        break;
+        default:
+          if(read && b64)
+            retObj.b64 += pidCryptUtil.stripLineFeeds(lines[i]);
+      }
+    }
+    return retObj;
+  }
+  
+  // public key
+  var public_key_1024  = '-----BEGIN PUBLIC KEY-----\n\
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDEvZG+oYe3Jk4G0sDjatbHfVQJ\n\
+gF+I5OJMNl9B/lk8fG+b91gbvvFPHRXNIYlrgyuKY/iR2chbZkJJpsSSA/24JXOx\n\
+c3Smt/mTwcN0+KwR2+YQ2ZCeZVISzb+vPYkt5aHxFNIaFlyob/ZFXfCjTOkbXQ2Q\n\
+xUZ1NpEe/VA8xl47WwIDAQAB\n\
+-----END PUBLIC KEY-----';
+
+  var params = certParser(public_key_1024);
+  console.log("params.b64="+params.b64);
+  var key = pidCryptUtil.decodeBase64(params.b64);
+  console.log("key="+key); 
+     
+   // new RSA instance  
+   var rsa = new pidCrypt.RSA();  
+     
+  /* RSA encryption 
+   * get the modulus and exponent from certificate (ASN1 parsing) 
+   * pem(Array of Bytes)        
+   */  
+     
+   // ASN1 parsing  
+   var asn = pidCrypt.ASN1.decode(pidCryptUtil.toByteArray(key));  
+   var tree = asn.toHexTree();  
+     
+   // setting the public key for encryption with retrieved ASN.1 tree  
+   rsa.setPublicKeyFromASN(tree);
+     
+   /*** encrypt */
+   var plaintext1 = "plaintext";
+   console.log("plaintext="+plaintext1);   
+   var crypted = rsa.encrypt(plaintext1);
+   var fromHex = pidCryptUtil.encodeBase64(pidCryptUtil.convertFromHex(crypted));  
+   var ciphertext = pidCryptUtil.fragment(fromHex,64);
+   console.log("ciphertext="+ciphertext);  
+  
+     
+  /*-----------------------------------------------------------* 
+   * DECRYPT: RSA 1024 bit                                     * 
+   *-----------------------------------------------------------*/  
+      
+   // private key
+   var private_key_1024  = '-----BEGIN RSA PRIVATE KEY-----\n\
+MIICXgIBAAKBgQDEvZG+oYe3Jk4G0sDjatbHfVQJgF+I5OJMNl9B/lk8fG+b91gb\n\
+vvFPHRXNIYlrgyuKY/iR2chbZkJJpsSSA/24JXOxc3Smt/mTwcN0+KwR2+YQ2ZCe\n\
+ZVISzb+vPYkt5aHxFNIaFlyob/ZFXfCjTOkbXQ2QxUZ1NpEe/VA8xl47WwIDAQAB\n\
+AoGAVVuyKjVG/q192PQDgCfQe8jidyTdTjWQAWTtu2IxMU8D1XVhItibNan21YMh\n\
+biYA9BAfvpfwl8csJ2xViMx2fXXwGM/FTHIeWTEaF0GxcoCFf0tvOwrdEICLDm9G\n\
+pzHm7/5kj/JCL6pST88+UV5bICqga3vWklg6gGcG6TeZSCECQQDjkZKYXMzzgQjz\n\
+h11gu1BC/6VD8jSLhVmT0qvKU+5UXpHjs7rJmnO8BsnYLAvy0fnL9NOwxOVfQtnE\n\
+YT4GnmQDAkEA3VIBwiKQCR94PuiXn1pTxnTxua5qxK1OxlPN7m96OlywqOlgMVny\n\
+whIk4PPH8hkEYVsXiwHSQp4WiRZRwUHnyQJBAIWex1XhP5JHFMtxkxmmQqVkWFTC\n\
+FapKnWNX0vkVOR6e/MiXkrinkQc5cTEWA9oLAsKIOfhUVF4P8bAGbRYT0KMCQQCB\n\
+j0lCOXNyM77zrLtd6MXUDo+XMDiGbCIKTfLmmtHFqo8sQnoyScKnw3FdUriAzA5Z\n\
+Y7bzhBxvLRZqJ+uyI3+pAkEAncBkyBUee//cNNeh20HNucj8REoNLzEw56q26c1c\n\
+9Za+tOoRsTEfrjodFWzzLNIYluNDjDkESPv5QsVeF5cOaA==\n\
+-----END RSA PRIVATE KEY-----';
+
+   params = certParser(private_key_1024); 
+   key = pidCryptUtil.decodeBase64(params.b64);
+     
+   // new RSA instance  
+   var rsa = new pidCrypt.RSA();  
+     
+   /* RSA decryption 
+    * get the parameters from certificate (ASN1 parsing) 
+    * pem(Array of Bytes)        
+    */  
+     
+   // ASN1 parsing  
+   asn = pidCrypt.ASN1.decode(pidCryptUtil.toByteArray(key));  
+   tree = asn.toHexTree();  
+     
+   // setting the private key for decryption with retrieved ASN.1 tree  
+   rsa.setPrivateKeyFromASN(tree);  
+     
+   /*** decrypt */  
+   ciphertext = pidCryptUtil.decodeBase64(pidCryptUtil.stripLineFeeds(ciphertext));  
+   var plaintext = rsa.decrypt(pidCryptUtil.convertToHex(ciphertext));
+   console.log("plaintext="+plaintext);
+
+</SCRIPT>
+</HEAD>
+<BODY>
+</BODY>
+</HTML>
